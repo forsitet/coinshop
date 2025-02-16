@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avito Merch Store</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h2>Coin shop</h2>
+        <input type="text" id="username" placeholder="Введите имя">
+        <button id="login">Войти</button>
+
+        <h3>Доступ к API</h3>
+        <button id="getInfo">Получить данные</button>
+
+        <h3>Отправить монеты</h3>
+        <input type="text" id="recipient" placeholder="Кому отправить">
+        <input type="number" id="amount" placeholder="Сколько">
+        <button id="sendCoins">Отправить</button>
+
+        <h3>Купить товар</h3>
+        <select id="itemSelect"></select>
+        <button id="buyItem">Купить</button>
+
+        <div class="response-box" id="response"></div>
+    </div>
+    
+    <div class="sidebar">
+        <h3>История переводов</h3>
+        <ul id="transactionList"></ul>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
