@@ -3,7 +3,7 @@
 <html>
 	<head>
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-		<title>auth: Go Coverage Report</title>
+		<title>app: Go Coverage Report</title>
 		<style>
 			body {
 				background: black;
@@ -55,25 +55,21 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">coin/auth/auth.go (84.6%)</option>
+				<option value="file0">coin/cmd/app/main.go (0.0%)</option>
 				
-				<option value="file1">coin/coin/coin.go (0.0%)</option>
+				<option value="file1">coin/internal/api/http/coin.go (34.2%)</option>
 				
-				<option value="file2">coin/database/database.go (0.0%)</option>
+				<option value="file2">coin/internal/api/http/middleware/auth.go (53.8%)</option>
 				
-				<option value="file3">coin/internal/handlers/auth.go (0.0%)</option>
+				<option value="file3">coin/internal/auth/jwt/jwt.go (84.6%)</option>
 				
-				<option value="file4">coin/internal/handlers/buyItems.go (71.4%)</option>
+				<option value="file4">coin/internal/database/postgres/coin.go (0.0%)</option>
 				
-				<option value="file5">coin/internal/handlers/getItems.go (60.0%)</option>
+				<option value="file5">coin/internal/database/postgres/init.go (0.0%)</option>
 				
-				<option value="file6">coin/internal/handlers/info.go (77.8%)</option>
+				<option value="file6">coin/internal/database/postgres/mocks/coin.go (96.3%)</option>
 				
-				<option value="file7">coin/internal/handlers/sendCoin.go (78.6%)</option>
-				
-				<option value="file8">coin/internal/handlers/transaction.go (0.0%)</option>
-				
-				<option value="file9">coin/internal/middleware/auth.go (53.8%)</option>
+				<option value="file7">coin/service/coin.go (64.7%)</option>
 				
 				</select>
 			</div>
@@ -87,7 +83,291 @@
 		</div>
 		<div id="content">
 		
-		<pre class="file" id="file0" style="display: none">package auth
+		<pre class="file" id="file0" style="display: none">package main
+
+import (
+        hndl "coin/internal/api/http"
+        "coin/internal/database/postgres"
+        "coin/service"
+        "database/sql"
+        "log"
+
+        _ "github.com/lib/pq"
+
+        "github.com/gin-gonic/gin"
+)
+
+const dbName = "coin"
+
+func main() <span class="cov0" title="0">{
+        defaultDBConnStr := "host=localhost port=5432 user=postgres password=12345 dbname=postgres sslmode=disable"
+        postgresDB, err := sql.Open("postgres", defaultDBConnStr)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatalf("connection error to %s: %s", dbName, err)
+        }</span>
+
+        <span class="cov0" title="0">postgres.CreateCoinRepository("coin", postgresDB)
+        coinDBConnStr := "host=localhost user=postgres password=12345 dbname=coin port=5432 sslmode=disable"
+        coinDB, err := sql.Open("postgres", coinDBConnStr)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatalf("connection error to %s: %s", "coin", err)
+        }</span>
+
+        <span class="cov0" title="0">postgres.InitCoinTables(coinDB)
+
+        coinRepo := postgres.NewCoinRepository(coinDB)
+        coinService := service.NewCoinService(coinRepo)
+        coinHandler := hndl.NewCoinHandler(*coinService)
+
+        r := gin.Default()
+        coinHandler.WithObjectHandlers(r)
+
+        if err := r.Run(":8085"); err != nil </span><span class="cov0" title="0">{
+                log.Fatalf("Ошибка запуска сервера: %v", err)
+        }</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package http
+
+import (
+        "coin/domain"
+        mwAuth "coin/internal/api/http/middleware"
+        auth "coin/internal/auth/jwt"
+        "coin/service"
+        "errors"
+        "log"
+        "net/http"
+
+        "github.com/gin-gonic/gin"
+)
+
+type CoinHandler struct {
+        service service.CoinService
+}
+
+func NewCoinHandler(service service.CoinService) *CoinHandler <span class="cov8" title="1">{
+        return &amp;CoinHandler{
+                service: service,
+        }
+}</span>
+
+func (h *CoinHandler) Auth(c *gin.Context) <span class="cov0" title="0">{
+        op := "http.coin.Auth"
+        var rawUser domain.User
+        if err := c.ShouldBindJSON(&amp;rawUser); err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный запрос"})
+                return
+        }</span>
+
+        <span class="cov0" title="0">user, err := h.service.GetUserByUsername(rawUser.Username)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not check user"})
+                return
+        }</span>
+
+        <span class="cov0" title="0">token, err := auth.GenerateToken(user.Username)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate token"})
+                return
+        }</span>
+
+        <span class="cov0" title="0">c.SetCookie("jwt_token", token, 3600, "/", "", false, true)
+
+        c.JSON(http.StatusOK, gin.H{"token": token})</span>
+
+}
+
+func (h *CoinHandler) BuyItem(c *gin.Context) <span class="cov8" title="1">{
+        op := "http.coin.BuyItem"
+        username, ok := c.Get("username")
+        if !ok </span><span class="cov0" title="0">{
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизации"})
+                return
+        }</span>
+        <span class="cov8" title="1">usernameStr, ok := username.(string)
+        if !ok </span><span class="cov0" title="0">{
+                log.Println(op, "Error converting username")
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка преобразования имени пользователя"})
+                return
+        }</span>
+        <span class="cov8" title="1">itemName := c.Param("item")
+        if itemName == "" </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Имя товара обязательно"})
+                return
+        }</span>
+        <span class="cov8" title="1">user, err := h.service.BuyItem(usernameStr, itemName)
+        if err != nil </span><span class="cov0" title="0">{
+                if errors.Is(err, service.ErrItemNotFound) </span><span class="cov0" title="0">{
+                        c.JSON(http.StatusBadRequest, gin.H{"error": "Такого товара нет"})
+                        return
+                }</span>
+                <span class="cov0" title="0">if errors.Is(err, service.ErrCoinNotEnough) </span><span class="cov0" title="0">{
+                        c.JSON(http.StatusBadRequest, gin.H{"error": "Не достаточно койнов"})
+                        return
+                }</span>
+                <span class="cov0" title="0">log.Println(op, err)
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not buy item"})
+                return</span>
+        }
+        <span class="cov8" title="1">c.JSON(http.StatusOK, gin.H{"balance": user.Balance, "inventory": user.Inventory})</span>
+}
+
+func (h *CoinHandler) GetItems(c *gin.Context) <span class="cov0" title="0">{
+        items := h.service.GetItem()
+        c.JSON(http.StatusOK, items)
+}</span>
+
+func (h *CoinHandler) Info(c *gin.Context) <span class="cov8" title="1">{
+        op := "http.coin.Info"
+        username, ok := c.Get("username")
+        if !ok </span><span class="cov0" title="0">{
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизации"})
+                return
+        }</span>
+        <span class="cov8" title="1">usernameStr, ok := username.(string)
+        if !ok </span><span class="cov0" title="0">{
+                log.Println(op, "Error converting username")
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка преобразования имени пользователя"})
+                return
+        }</span>
+        <span class="cov8" title="1">user, err := h.service.GetUserByUsername(usernameStr)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not get user"})
+                return
+        }</span>
+        <span class="cov8" title="1">c.JSON(http.StatusOK, gin.H{
+                "username":  username,
+                "balance":   user.Balance,
+                "inventory": user.Inventory,
+        })</span>
+}
+
+func (h *CoinHandler) SendCoin(c *gin.Context) <span class="cov8" title="1">{
+        op := "http.coin.SendCoin"
+        var req struct {
+                ToUser string `json:"to_user"`
+                Amount int    `json:"amount"`
+        }
+        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный запрос"})
+                return
+        }</span>
+        <span class="cov8" title="1">if req.Amount &lt;= 0 </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Количетсво койнов должно быть больше 0"})
+                return
+        }</span>
+
+        <span class="cov8" title="1">senderUsername, ok := c.Get("username")
+        if !ok </span><span class="cov0" title="0">{
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизайии"})
+                return
+        }</span>
+        <span class="cov8" title="1">senderUsernameStr, ok := senderUsername.(string)
+        if !ok </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка преобразования имени пользователя"})
+                return
+        }</span>
+
+        <span class="cov8" title="1">if senderUsernameStr == req.ToUser </span><span class="cov0" title="0">{
+                c.JSON(http.StatusNotFound, gin.H{"error": "Нельзя отправлять койны самому себе"})
+                return
+        }</span>
+
+        <span class="cov8" title="1">balanceSender, err := h.service.SendCoin(senderUsernameStr, req.ToUser, req.Amount)
+        if err != nil </span><span class="cov0" title="0">{
+                if errors.Is(err, service.ErrCoinNotEnough) </span><span class="cov0" title="0">{
+                        c.JSON(http.StatusBadRequest, gin.H{"error": "Недостаточно койнов"})
+                        return
+                }</span>
+                <span class="cov0" title="0">log.Println(op, err)
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not send coin"})
+                return</span>
+        }
+        <span class="cov8" title="1">log.Println(op, "Coin sent successfully")
+        c.JSON(http.StatusOK, gin.H{
+                "to_user":             req.ToUser,
+                "amount":             req.Amount,
+                "sender_new_balance": balanceSender,
+        })</span>
+}
+
+func (h *CoinHandler) Operations(c *gin.Context) <span class="cov8" title="1">{
+        const op = "http.coin.Operations"
+        username, ok := c.Get("username")
+        if !ok </span><span class="cov0" title="0">{
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизации"})
+                log.Println(op, "Error getting username from context")
+                return
+        }</span>
+        <span class="cov8" title="1">usernameStr, ok := username.(string)
+        if !ok </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка преобразования имени пользователя"})
+                return
+        }</span>
+        <span class="cov8" title="1">operations, err := h.service.GetOperations(usernameStr)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not get operations"})
+                return
+        }</span>
+        <span class="cov8" title="1">c.JSON(http.StatusOK, operations)
+        log.Println(op, "Operations retrieved successfully")</span>
+
+}
+
+func (h *CoinHandler) WithObjectHandlers(r *gin.Engine) <span class="cov0" title="0">{
+        r.Static("/static", "./static")
+        r.GET("/", func(c *gin.Context) </span><span class="cov0" title="0">{
+                c.File("./static")
+        }</span>)
+        <span class="cov0" title="0">api := r.Group("/api")
+        </span><span class="cov0" title="0">{
+                api.POST("/auth", h.Auth)
+                api.GET("/info", mwAuth.AuthMiddleware, h.Info)
+                api.POST("/sendCoin", mwAuth.AuthMiddleware, h.SendCoin)
+                api.GET("/buy/:item", mwAuth.AuthMiddleware, h.BuyItem)
+                api.GET("/items", h.GetItems)
+                api.GET("/transactions", mwAuth.AuthMiddleware, h.Operations)
+        }</span>
+
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package middleware
+
+import (
+        auth "coin/internal/auth/jwt"
+        "net/http"
+
+        "github.com/gin-gonic/gin"
+)
+
+func AuthMiddleware(c *gin.Context) <span class="cov8" title="1">{
+        tokenString := c.GetHeader("Authorization")
+        if tokenString == "" </span><span class="cov0" title="0">{
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "Необходим токен"})
+                c.Abort()
+                return
+        }</span>
+        <span class="cov8" title="1">tokenString = tokenString[7:]
+        claims, err := auth.ValidateToken(tokenString)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "Неверный токен"})
+                c.Abort()
+                return
+        }</span>
+
+        <span class="cov8" title="1">c.Set("username", claims.Username)
+        c.Next()</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package auth
 
 import (
         "errors"
@@ -120,7 +400,7 @@ func ValidateToken(signedToken string) (*JwtClaim, error) <span class="cov8" tit
         token, err := jwt.ParseWithClaims(
                 signedToken,
                 &amp;JwtClaim{},
-                func(token *jwt.Token) (interface{}, error) </span><span class="cov8" title="1">{
+                func(_ *jwt.Token) (interface{}, error) </span><span class="cov8" title="1">{
                         return mySigningKey, nil
                 }</span>,
         )
@@ -143,421 +423,599 @@ func ValidateToken(signedToken string) (*JwtClaim, error) <span class="cov8" tit
 }
 </pre>
 		
-		<pre class="file" id="file1" style="display: none">package main
+		<pre class="file" id="file4" style="display: none">package postgres
 
 import (
-        db "coin/database"
-        hndl "coin/internal/handlers"
-        mwAuth "coin/internal/middleware"
-
-
-        "github.com/gin-gonic/gin"
-)
-
-func main() <span class="cov0" title="0">{
-        db.InitDB()
-        r := gin.Default()
-        r.Static("/static", "./static")
-        r.GET("/", func(c *gin.Context) </span><span class="cov0" title="0">{
-                c.File("./static")
-        }</span>)
-        <span class="cov0" title="0">api := r.Group("/api")
-        </span><span class="cov0" title="0">{
-                api.POST("/auth", hndl.AuthHandler)
-                api.GET("/info", mwAuth.AuthMiddleware, hndl.InfoHandler)
-                api.POST("/sendCoin", mwAuth.AuthMiddleware, hndl.SendCoinHandler)
-                api.GET("/buy/:item", mwAuth.AuthMiddleware, hndl.BuyItemHandler)
-                api.GET("/items", hndl.GetItemsHandler)
-                api.GET("/transactions", mwAuth.AuthMiddleware, hndl.TransactionHandler)
-        }</span>
-
-        <span class="cov0" title="0">r.Run(":8085")</span>
-}
-</pre>
-		
-		<pre class="file" id="file2" style="display: none">package database
-
-import (
+        "coin/domain"
+        "database/sql"
         "log"
         "time"
-
-        "gorm.io/driver/postgres"
-        "gorm.io/gorm"
 )
 
-var Db *gorm.DB
-var ItemPrices = make(map[string]int, 10)
-
-type Item struct {
-        Name  string `json:"name" gorm:"primaryKey"`
-        Price int    `json:"price"`
+type preparedStatements struct {
+        getUser       *sql.Stmt
+        createUser    *sql.Stmt
+        getItem       *sql.Stmt
+        getItemPrice  *sql.Stmt
+        getOperations *sql.Stmt
 }
 
-type User struct {
-        ID        uint   `json:"id" gorm:"primaryKey"`
-        Username  string `json:"username" gorm:"uniqueIndex"`
-        Balance   int    `json:"balance" gorm:"default:1000"`
-        Inventory []InventoryItem
+type CoinRepository struct {
+        DB    *sql.DB
+        stmts *preparedStatements
 }
 
-type Transaction struct {
-        ID        uint `gorm:"primaryKey"`
-        FromUser  uint
-        ToUser    uint
-        Amount    int
-        CreatedAt time.Time
-}
+func NewCoinRepository(db *sql.DB) *CoinRepository <span class="cov0" title="0">{
+        InitCoinTables(db)
+        stmts := newPreparedStatements(db)
+        return &amp;CoinRepository{
+                DB:    db,
+                stmts: stmts,
+        }
+}</span>
 
-type InventoryItem struct {
-        ID       uint `gorm:"primaryKey"`
-        UserID   uint
-        ItemType string
-        Quantity int
-}
-
-func InitDB() <span class="cov0" title="0">{
-        dsn := "host=localhost user=postgres password=12345 dbname=coinshop port=5432 sslmode=disable"
+func newPreparedStatements(db *sql.DB) *preparedStatements <span class="cov0" title="0">{
+        const op = "database.postgres"
+        stmts := &amp;preparedStatements{}
         var err error
-
-        Db, err = gorm.Open(postgres.Open(dsn), &amp;gorm.Config{})
+        stmts.getUser, err = db.Prepare(`
+                SELECT u.id, u.username, u.balance, i.item_type, i.quantity 
+                FROM users u
+                LEFT JOIN inventory_items i on u.id=i.user_id
+                WHERE u.username=$1;
+        `)
         if err != nil </span><span class="cov0" title="0">{
-                log.Fatal("Failed to connect to database:", err)
+                log.Println(op, err)
         }</span>
 
-        <span class="cov0" title="0">rows, err := Db.Raw(`SELECT "Name", "Price" FROM items;`).Rows()
+        <span class="cov0" title="0">stmts.createUser, err = db.Prepare(`
+                INSERT INTO users (username, balance)
+                VALUES ($1, $2);
+        `)
         if err != nil </span><span class="cov0" title="0">{
-                log.Fatal("БД items не найдена")
+                log.Println(op, err)
+        }</span>
+
+        <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+        }</span>
+
+        <span class="cov0" title="0">stmts.getItem, err = db.Prepare(`
+                SELECT i.name, i.price
+                FROM items i; 
+        `)
+
+        stmts.getItemPrice, err = db.Prepare(`
+                SELECT i.price
+                FROM items i
+                WHERE i.name = $1;
+        `)
+
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+        }</span>
+
+        <span class="cov0" title="0">stmts.getOperations, err = db.Prepare(`
+                SELECT t.from_user, t.to_user, t.amount, t.created_at
+                FROM transactions t
+                JOIN users u1 ON t.from_user = u1.username
+                JOIN users u2 ON t.to_user = u2.username
+                WHERE t.from_user = $1 OR t.to_user = $1
+                ORDER BY t.created_at DESC
+        `)
+
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+        }</span>
+
+        <span class="cov0" title="0">return stmts</span>
+
+}
+
+func (r *CoinRepository) GetUser(username string) (domain.User, error) <span class="cov0" title="0">{
+        var u domain.User
+        var itemType sql.NullString
+        var itemQuantity sql.NullInt64
+        u.Inventory = make([]domain.InventoryItem, 0)
+        rows, err := r.stmts.getUser.Query(username)
+        if err != nil </span><span class="cov0" title="0">{
+                return domain.User{}, err
         }</span>
         <span class="cov0" title="0">defer rows.Close()
 
         for rows.Next() </span><span class="cov0" title="0">{
+                if err := rows.Scan(&amp;u.ID, &amp;u.Username, &amp;u.Balance, &amp;itemType, &amp;itemQuantity); err != nil </span><span class="cov0" title="0">{
+                        return domain.User{}, err
+                }</span>
+                <span class="cov0" title="0">if itemType.Valid &amp;&amp; itemQuantity.Valid </span><span class="cov0" title="0">{
+                        u.Inventory = append(u.Inventory, domain.InventoryItem{ItemType: itemType.String, Quantity: int(itemQuantity.Int64)})
+                }</span>
+        }
+        <span class="cov0" title="0">return u, nil</span>
+}
+
+func (r *CoinRepository) CreateUser(username string, balance int) error <span class="cov0" title="0">{
+        _, err := r.stmts.createUser.Exec(username, balance)
+        return err
+}</span>
+
+func (r *CoinRepository) PostBuyItem(userID uint, itemName string) error <span class="cov0" title="0">{
+        const op = "database.postgres.PostBuyItem"
+        price, err := r.GetItemPrice(itemName)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return err
+        }</span>
+        <span class="cov0" title="0">tx, err := r.DB.Begin()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return err
+        }</span>
+
+        <span class="cov0" title="0">_, err = tx.Exec(`
+        UPDATE users SET balance = balance - $1 WHERE id = $2;`,
+                price, userID)
+        if err != nil </span><span class="cov0" title="0">{
+                tx.Rollback()
+                log.Println(op, err)
+                return err
+        }</span>
+        <span class="cov0" title="0">stmt := `INSERT INTO inventory_items (user_id, item_type, quantity)
+                VALUES ($1, $2, 1)
+                ON CONFLICT (user_id, item_type)
+                DO UPDATE SET quantity = inventory_items.quantity + EXCLUDED.quantity;`
+
+        _, err = tx.Exec(stmt, userID, itemName)
+        if err != nil </span><span class="cov0" title="0">{
+                tx.Rollback()
+                log.Println(op, err)
+                return err
+        }</span>
+        <span class="cov0" title="0">err = tx.Commit()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return err
+        }</span>
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Под вопросом
+func (r *CoinRepository) GetItem() []domain.Item <span class="cov0" title="0">{
+        rows, err := r.stmts.getItem.Query()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(err)
+        }</span>
+        <span class="cov0" title="0">items := make([]domain.Item, 0)
+        for rows.Next() </span><span class="cov0" title="0">{
                 var price int
                 var name string
                 if err := rows.Scan(&amp;name, &amp;price); err != nil </span><span class="cov0" title="0">{
-                        log.Fatal("ошибка в БД items")
+                        log.Println(err)
+                        continue</span>
+                }
+                <span class="cov0" title="0">items = append(items, domain.Item{Name: name, Price: price})</span>
+        }
+        <span class="cov0" title="0">return items</span>
+}
+
+func (r *CoinRepository) GetItemPrice(itemName string) (int, error) <span class="cov0" title="0">{
+        const op = "database.postgres.getItemPrice"
+        var price int
+        err := r.stmts.getItemPrice.QueryRow(itemName).Scan(&amp;price)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return 0, err
+        }</span>
+        <span class="cov0" title="0">return price, nil</span>
+}
+
+func (r *CoinRepository) GetOperations(username string) ([]domain.Operations, error) <span class="cov0" title="0">{
+        const op = "database.postgres.GetOperations"
+        rows, err := r.stmts.getOperations.Query(username)
+        operations := make([]domain.Operations, 0)
+        if err != nil </span><span class="cov0" title="0">{
+                return []domain.Operations{}, err
+        }</span>
+        <span class="cov0" title="0">defer rows.Close()
+
+        for rows.Next() </span><span class="cov0" title="0">{
+                var t domain.Operations
+                err := rows.Scan(&amp;t.FromUser, &amp;t.ToUser, &amp;t.Amount, &amp;t.CreatedAt)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Println(op, err)
+                        continue</span>
+                }
+                <span class="cov0" title="0">operations = append(operations, t)</span>
+        }
+        <span class="cov0" title="0">return operations, nil</span>
+}
+
+func (r *CoinRepository) SendCoinTransaction(senderUsername, recipientUsername string, amount int) error <span class="cov0" title="0">{
+        const op = "database.postgres.SendCoinTransaction"
+        tx, err := r.DB.Begin()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return err
+        }</span>
+
+        <span class="cov0" title="0">_, err = tx.Exec(`
+                UPDATE users SET balance = balance - $1 WHERE username = $2;`,
+                amount, senderUsername)
+        if err != nil </span><span class="cov0" title="0">{
+                tx.Rollback()
+                log.Println(op, err)
+                return err
+        }</span>
+
+        <span class="cov0" title="0">_, err = tx.Exec(`
+                UPDATE users SET balance = balance + $1 WHERE username = $2;
+        `, amount, recipientUsername)
+        if err != nil </span><span class="cov0" title="0">{
+                tx.Rollback()
+                log.Println(op, err)
+                return err
+        }</span>
+        <span class="cov0" title="0">log.Printf("from_user = %s", senderUsername)
+        _, err = tx.Exec(`INSERT INTO transactions (from_user, to_user, amount, created_at) VALUES ($1, $2, $3, $4)`,
+                senderUsername, recipientUsername, amount, time.Now())
+        if err != nil </span><span class="cov0" title="0">{
+                tx.Rollback()
+                log.Println(op, err)
+                return err
+        }</span>
+
+        <span class="cov0" title="0">err = tx.Commit()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return err
+        }</span>
+        <span class="cov0" title="0">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package postgres
+
+import (
+        "bufio"
+        "database/sql"
+        "log"
+        "os"
+        "strings"
+
+        _ "github.com/lib/pq"
+)
+
+func CreateCoinRepository(dbName string, db *sql.DB) <span class="cov0" title="0">{
+        var exists bool
+        query := `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`
+        if err := db.QueryRow(query, dbName).Scan(&amp;exists); err != nil </span><span class="cov0" title="0">{
+                log.Fatal("error checking the existence of the database", err)
+        }</span>
+        <span class="cov0" title="0">if exists </span><span class="cov0" title="0">{
+                log.Printf("DB %q already exists\n", dbName)
+        }</span> else<span class="cov0" title="0"> {
+                log.Printf("Creating a database %q\n", dbName)
+                _, err := db.Exec("CREATE DATABASE " + dbName)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Fatal("error when creating the database\n", err)
+                }</span> else<span class="cov0" title="0"> {
+                        log.Printf("database %q was created successfully\n", dbName)
                 }</span>
-                <span class="cov0" title="0">ItemPrices[name] = price</span>
         }
-        <span class="cov0" title="0">Db.AutoMigrate(&amp;User{}, &amp;Transaction{}, &amp;InventoryItem{})</span>
 }
-</pre>
-		
-		<pre class="file" id="file3" style="display: none">package handlers
 
-import (
-        "coin/auth"
-        db "coin/database"
-        "fmt"
-        "net/http"
-
-        "github.com/gin-gonic/gin"
-)
-
-func AuthHandler(c *gin.Context) <span class="cov0" title="0">{
-        var user db.User
-
-        if err := c.ShouldBindJSON(&amp;user); err != nil </span><span class="cov0" title="0">{
-                fmt.Println(err)
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный запрос"})
-                return
-        }</span>
-
-        <span class="cov0" title="0">var existingUser db.User
-
-        db.Db.Where("username = ?", user.Username).First(&amp;existingUser)
-
-        if existingUser.ID == 0 </span><span class="cov0" title="0">{
-                user.Balance = 1000
-                db.Db.Create(&amp;user)
-        }</span> else<span class="cov0" title="0"> {
-                user = existingUser
-        }</span>
-
-        <span class="cov0" title="0">token, err := auth.GenerateToken(user.Username)
+func InitCoinTables(db *sql.DB) <span class="cov0" title="0">{
+        const op = "database.postgres.InitCoinTables"
+        _, err := db.Exec(`
+                CREATE TABLE IF NOT EXISTS items (
+                        name varchar PRIMARY KEY,
+                        price INT NOT NULL
+                );
+        `)
         if err != nil </span><span class="cov0" title="0">{
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate token"})
-                return
+                log.Fatal(op, err)
         }</span>
 
-        <span class="cov0" title="0">c.SetCookie("jwt_token", token, 3600, "/", "", false, true)
+        <span class="cov0" title="0">_, err = db.Exec(`
+                CREATE TABLE IF NOT EXISTS users (
+                        id SERIAL PRIMARY KEY,
+                        username VARCHAR(255) UNIQUE NOT NULL,
+                        balance INT NOT NULL DEFAULT 1000)`)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatal(op, err)
+        }</span>
 
-        c.JSON(http.StatusOK, gin.H{"token": token})</span>
+        <span class="cov0" title="0">_, err = db.Exec(`
+                CREATE TABLE IF NOT EXISTS transactions (
+                        id SERIAL PRIMARY KEY,
+                        from_user VARCHAR(255) REFERENCES users(username),
+                        to_user VARCHAR(255) REFERENCES users(username),
+                        amount INT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatal(op, err)
+        }</span>
+
+        <span class="cov0" title="0">_, err = db.Exec(`
+                CREATE TABLE IF NOT EXISTS inventory_items (
+                        id SERIAL PRIMARY KEY,
+                        user_id INT REFERENCES users(id),
+                        item_type VARCHAR(255) NOT NULL,
+                        quantity INT NOT NULL DEFAULT 0);`)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatal(op, err)
+        }</span>
+
+        <span class="cov0" title="0">_, err = db.Exec(`
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_unique
+                ON inventory_items (user_id, item_type);
+        `)
+
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatal(op, err)
+        }</span>
+
+        <span class="cov0" title="0">_, err = db.Exec(`
+                CREATE TABLE IF NOT EXISTS items(
+                        id SERIAL PRIMARY KEY,
+                        name VARCHAR(255) UNIQUE NOT NULL,
+                        price INT NOT NULL);
+        `)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatal(op, err)
+        }</span>
+
+        <span class="cov0" title="0">_, err = db.Exec(`
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_name_item_unique
+                ON items(name);
+        `)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatal(op, err)
+        }</span>
+        <span class="cov0" title="0">insertItems(db)
+        log.Println("all tables are filled in")</span>
+}
+
+func insertItems(db *sql.DB) <span class="cov0" title="0">{
+        const op = "database.postgres.insertItems"
+        file, err := os.Open("items.csv")
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatal(op, err)
+        }</span>
+        <span class="cov0" title="0">defer file.Close()
+        scanner := bufio.NewScanner(file)
+        for scanner.Scan() </span><span class="cov0" title="0">{
+                fields := strings.Split(scanner.Text(), ",")
+                db.Exec(`INSERT INTO items (name, price) 
+                                VALUES ($1, $2);`,
+                        fields[0], fields[1])
+        }</span>
+        <span class="cov0" title="0">log.Println("the items table is full")</span>
+
 }
 </pre>
 		
-		<pre class="file" id="file4" style="display: none">package handlers
+		<pre class="file" id="file6" style="display: none">package mocks
 
 import (
-        db "coin/database"
-        "net/http"
-
-        "github.com/gin-gonic/gin"
-)
-
-func BuyItemHandler(c *gin.Context) <span class="cov8" title="1">{
-        username, ok := c.Get("username")
-        if !ok </span><span class="cov8" title="1">{
-                c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизации"})
-                return
-        }</span>
-
-        <span class="cov8" title="1">itemName := c.Param("item")
-        if itemName == "" </span><span class="cov0" title="0">{
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Имя товара обязательно"})
-                return
-        }</span>
-
-        <span class="cov8" title="1">price, ok := db.ItemPrices[itemName]
-        if !ok </span><span class="cov8" title="1">{
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Такого товара нет"})
-                return
-        }</span>
-
-        <span class="cov8" title="1">var user db.User
-        if err := db.Db.Where("username = ?", username).First(&amp;user).Error; err != nil </span><span class="cov0" title="0">{
-                c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
-                return
-        }</span>
-
-        <span class="cov8" title="1">if user.Balance &lt; price </span><span class="cov0" title="0">{
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Не достаточно койнов"})
-                return
-        }</span>
-
-        <span class="cov8" title="1">user.Balance -= price
-        db.Db.Save(&amp;user)
-
-        var item db.InventoryItem
-        if err := db.Db.Where("user_id = ? AND item_type = ?", user.ID, itemName).First(&amp;item).Error; err != nil </span><span class="cov8" title="1">{
-                item = db.InventoryItem{UserID: user.ID, ItemType: itemName, Quantity: 1}
-                db.Db.Create(&amp;item)
-        }</span> else<span class="cov0" title="0"> {
-                item.Quantity++
-                db.Db.Save(&amp;item)
-        }</span>
-
-        <span class="cov8" title="1">c.JSON(http.StatusOK, gin.H{"balance": user.Balance, "inventory": item})</span>
-}
-</pre>
-		
-		<pre class="file" id="file5" style="display: none">package handlers
-
-import (
-        db "coin/database"
-        "net/http"
-
-        "github.com/gin-gonic/gin"
-)
-
-func GetItemsHandler(c *gin.Context) <span class="cov8" title="1">{
-        var items []db.Item
-        if err := db.Db.Find(&amp;items).Error; err != nil </span><span class="cov0" title="0">{
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренная ошибка"})
-                return
-        }</span>
-        <span class="cov8" title="1">c.JSON(http.StatusOK, items)</span>
-}
-</pre>
-		
-		<pre class="file" id="file6" style="display: none">package handlers
-
-import (
-        db "coin/database"
-        "net/http"
-
-        "github.com/gin-gonic/gin"
-)
-
-func InfoHandler(c *gin.Context) <span class="cov8" title="1">{
-        username, ok := c.Get("username")
-        if !ok </span><span class="cov8" title="1">{
-                c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизации"})
-                return
-        }</span>
-
-        <span class="cov8" title="1">var user db.User
-        if err := db.Db.Preload("Inventory").Where("username = ?", username).First(&amp;user).Error; err != nil </span><span class="cov0" title="0">{
-                c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-                return
-        }</span>
-
-        <span class="cov8" title="1">c.JSON(http.StatusOK, gin.H{
-                "username":  username,
-                "balance":   user.Balance,
-                "inventory": user.Inventory,
-        })</span>
-}
-</pre>
-		
-		<pre class="file" id="file7" style="display: none">package handlers
-
-import (
-        db "coin/database"
-        "net/http"
+        "coin/domain"
+        "errors"
         "time"
-
-        "github.com/gin-gonic/gin"
 )
 
-func SendCoinHandler(c *gin.Context) <span class="cov8" title="1">{
-        senderUsername, ok := c.Get("username")
-        if !ok </span><span class="cov8" title="1">{
-                c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизайии"})
-                return
-        }</span>
+type InMemoryRepo struct {
+        Users         map[string]domain.User
+        ItemPrices    map[string]int
+        Items         []domain.Item
+        Ops           map[string][]domain.Operations
+        autoIncUserID uint
+}
 
-        <span class="cov8" title="1">var req struct {
-                ToUser string `json:"toUser"`
-                Amount int    `json:"amount"`
+func NewInMemoryRepo() *InMemoryRepo <span class="cov8" title="1">{
+        return &amp;InMemoryRepo{
+                Users:      make(map[string]domain.User),
+                ItemPrices: map[string]int{"sword": 100, "shield": 150},
+                Items: []domain.Item{
+                        {Name: "sword", Price: 100},
+                        {Name: "shield", Price: 150},
+                },
+                Ops:           make(map[string][]domain.Operations),
+                autoIncUserID: 1,
         }
+}</span>
 
-        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov8" title="1">{
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный запрос"})
-                return
+func (m *InMemoryRepo) GetUser(username string) (domain.User, error) <span class="cov8" title="1">{
+        user, ok := m.Users[username]
+        if !ok </span><span class="cov8" title="1">{
+                return domain.User{}, nil
         }</span>
 
-        <span class="cov8" title="1">if req.Amount &lt;= 0 </span><span class="cov8" title="1">{
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Количетсво койнов должно быть больше 0"})
-                return
-        }</span>
+        <span class="cov8" title="1">return user, nil</span>
+}
 
-        <span class="cov8" title="1">var sender, recipient db.User
+func (m *InMemoryRepo) CreateUser(username string, balance int) error <span class="cov8" title="1">{
+        m.Users[username] = domain.User{
+                ID:       m.autoIncUserID,
+                Username: username,
+                Balance:  balance,
+        }
+        m.autoIncUserID++
+        return nil
+}</span>
 
-        if err := db.Db.Where("username = ?", senderUsername).First(&amp;sender).Error; err != nil </span><span class="cov8" title="1">{
-                c.JSON(http.StatusNotFound, gin.H{"error": "Sender not found"})
-                return
-        }</span>
+func (m *InMemoryRepo) PostBuyItem(userID uint, itemName string) error <span class="cov8" title="1">{
+        for username, user := range m.Users </span><span class="cov8" title="1">{
+                if user.ID == userID </span><span class="cov8" title="1">{
+                        user.Inventory = append(user.Inventory, domain.InventoryItem{ItemType: itemName, Quantity: 1})
+                        user.Balance -= m.ItemPrices[itemName]
+                        m.Users[username] = user
+                        return nil
+                }</span>
+        }
+        <span class="cov0" title="0">return errors.New("user not found")</span>
+}
 
-        <span class="cov8" title="1">if sender.Balance &lt; req.Amount </span><span class="cov8" title="1">{
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Нехватает койнов :("})
-                return
-        }</span>
+func (m *InMemoryRepo) GetItem() []domain.Item <span class="cov8" title="1">{
+        return m.Items
+}</span>
 
-        <span class="cov8" title="1">if err := db.Db.Where("username = ?", req.ToUser).First(&amp;recipient).Error; err != nil </span><span class="cov8" title="1">{
-                c.JSON(http.StatusNotFound, gin.H{"error": "Получатель не найден"})
-                return
-        }</span>
+func (m *InMemoryRepo) GetItemPrice(itemName string) (int, error) <span class="cov8" title="1">{
+        return m.ItemPrices[itemName], nil
+}</span>
 
-        <span class="cov8" title="1">if sender.Username == recipient.Username </span><span class="cov8" title="1">{
-                c.JSON(http.StatusNotFound, gin.H{"error": "Нельзя отправлять койны самому себе"})
-                return
-        }</span>
+func (m *InMemoryRepo) GetOperations(username string) ([]domain.Operations, error) <span class="cov8" title="1">{
+        return m.Ops[username], nil
+}</span>
 
-        <span class="cov8" title="1">sender.Balance -= req.Amount
-        recipient.Balance += req.Amount
+func (m *InMemoryRepo) SendCoinTransaction(senderUsername, recipientUsername string, amount int) error <span class="cov8" title="1">{
+        sender := m.Users[senderUsername]
+        recipient := m.Users[recipientUsername]
 
-        tx := db.Db.Begin()
+        sender.Balance -= amount
+        recipient.Balance += amount
 
-        if err := tx.Save(&amp;sender).Error; err != nil </span><span class="cov0" title="0">{
-                tx.Rollback()
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка отправления"})
-                return
-        }</span>
+        m.Users[senderUsername] = sender
+        m.Users[recipientUsername] = recipient
 
-        <span class="cov8" title="1">if err := tx.Save(&amp;recipient).Error; err != nil </span><span class="cov0" title="0">{
-                tx.Rollback()
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка отправления"})
-                return
-        }</span>
-
-        <span class="cov8" title="1">transaction := db.Transaction{
-                FromUser:  sender.ID,
-                ToUser:    recipient.ID,
-                Amount:    req.Amount,
+        m.Ops[senderUsername] = append(m.Ops[senderUsername], domain.Operations{
+                FromUser:  sender.Username,
+                ToUser:    recipient.Username,
+                Amount:    -amount,
                 CreatedAt: time.Now(),
-        }
-
-        if err := tx.Create(&amp;transaction).Error; err != nil </span><span class="cov0" title="0">{
-                tx.Rollback()
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка создания записи"})
-                return
-        }</span>
-
-        <span class="cov8" title="1">tx.Commit()
-
-        c.JSON(http.StatusOK, gin.H{
-                "sender_new_balance": sender.Balance,
-                "recipient":          recipient.Username,
-                "amount":             req.Amount,
-        })</span>
-}
+        })
+        m.Ops[recipientUsername] = append(m.Ops[recipientUsername], domain.Operations{
+                FromUser:  sender.Username,
+                ToUser:    recipient.Username,
+                Amount:    amount,
+                CreatedAt: time.Now(),
+        })
+        return nil
+}</span>
 </pre>
 		
-		<pre class="file" id="file8" style="display: none">package handlers
+		<pre class="file" id="file7" style="display: none">package service
 
 import (
-        db "coin/database"
-        "net/http"
-        "time"
-
-        "github.com/gin-gonic/gin"
+        "coin/domain"
+        "coin/internal/database"
+        "log"
 )
 
-func TransactionHandler(c *gin.Context) <span class="cov0" title="0">{
-        username, ok := c.Get("username")
-        if !ok </span><span class="cov0" title="0">{
-                c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизации"})
-                return
-        }</span>
-
-
-        <span class="cov0" title="0">var user db.User
-        if err := db.Db.Where("username = ?", username).First(&amp;user).Error; err != nil </span><span class="cov0" title="0">{
-                c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
-                return
-        }</span>
-
-        <span class="cov0" title="0">var transactions []struct {
-                Amount    int       `json:"amount"`
-                CreatedAt time.Time `json:"created_at"`
-                Send      string    `json:"send"`
-                Rec       string    `json:"rec"`
-        }
-
-        query := `
-                SELECT t.amount, t.created_at, u1.username AS send, u2.username AS rec
-                FROM transactions t
-                JOIN users u1 ON t.from_user = u1.id
-                JOIN users u2 ON t.to_user = u2.id
-                WHERE t.from_user = ? OR t.to_user = ?
-                ORDER BY t.created_at DESC
-                `
-
-        if err := db.Db.Raw(query, user.ID, user.ID).Scan(&amp;transactions).Error; err != nil </span><span class="cov0" title="0">{
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки"})
-                return
-        }</span>
-
-        <span class="cov0" title="0">c.JSON(http.StatusOK, transactions)</span>
+type CoinService struct {
+        repo database.Object
 }
-</pre>
-		
-		<pre class="file" id="file9" style="display: none">package middleware
 
-import (
-        "coin/auth"
-        "net/http"
+func NewCoinService(repo database.Object) *CoinService <span class="cov8" title="1">{
+        return &amp;CoinService{
+                repo: repo,
+        }
+}</span>
 
-        "github.com/gin-gonic/gin"
-)
+const DefaultBalance = 1000
 
-func AuthMiddleware(c *gin.Context) <span class="cov8" title="1">{
-        tokenString := c.GetHeader("Authorization")
-        if tokenString == "" </span><span class="cov0" title="0">{
-                c.JSON(http.StatusUnauthorized, gin.H{"error": "Необходим токен"})
-                c.Abort()
-                return
-        }</span>
-        <span class="cov8" title="1">tokenString = tokenString[7:]
-        claims, err := auth.ValidateToken(tokenString)
+func (s *CoinService) GetUserByUsername(username string) (domain.User, error) <span class="cov8" title="1">{
+        const op = "service.coin.GetUserByUsername"
+        user, err := s.repo.GetUser(username)
         if err != nil </span><span class="cov0" title="0">{
-                c.JSON(http.StatusUnauthorized, gin.H{"error": "Неверный токен"})
-                c.Abort()
-                return
+                return domain.User{}, err
+        }</span>
+        <span class="cov8" title="1">if user.ID == 0 &amp;&amp; user.Username == "" &amp;&amp; user.Balance == 0 &amp;&amp; len(user.Inventory) == 0 </span><span class="cov8" title="1">{
+                err = s.createUser(username)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Println(op, err)
+                        return domain.User{}, err
+                }</span>
+                <span class="cov8" title="1">user, err = s.repo.GetUser(username)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Println(op, err)
+                        return domain.User{}, err
+                }</span>
+        }
+        <span class="cov8" title="1">return user, nil</span>
+}
+
+func (s *CoinService) createUser(username string) error <span class="cov8" title="1">{
+        const op = "service.coin.createUser"
+        err := s.repo.CreateUser(username, DefaultBalance)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return err
+        }</span>
+        <span class="cov8" title="1">s.GetUserByUsername(username)
+        return nil</span>
+}
+
+func (s *CoinService) BuyItem(username string, itemName string) (domain.User, error) <span class="cov8" title="1">{
+        const op = "service.coin.BuyItem"
+        price, err := s.repo.GetItemPrice(itemName)
+        if err != nil </span><span class="cov0" title="0">{
+                return domain.User{}, ErrItemNotFound
         }</span>
 
-        <span class="cov8" title="1">c.Set("username", claims.Username)
-        c.Next()</span>
+        <span class="cov8" title="1">user, err := s.GetUserByUsername(username)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return domain.User{}, err
+        }</span>
+        <span class="cov8" title="1">if user.Balance &lt; price </span><span class="cov8" title="1">{
+                return domain.User{}, ErrCoinNotEnough
+        }</span>
+        <span class="cov8" title="1">user.Balance -= price
+        err = s.repo.PostBuyItem(user.ID, itemName)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return domain.User{}, err
+        }</span>
+
+        <span class="cov8" title="1">return user, nil</span>
+}
+
+func (s *CoinService) GetItem() []domain.Item <span class="cov8" title="1">{
+        return s.repo.GetItem()
+}</span>
+
+func (s *CoinService) SendCoin(senderUsername string, recipientUsername string, amount int) (int, error) <span class="cov8" title="1">{
+        const op = "service.coin.SendCoin"
+        sender, err := s.GetUserByUsername(senderUsername)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return sender.Balance, err
+        }</span>
+        <span class="cov8" title="1">log.Println(senderUsername, recipientUsername)
+        recipient, err := s.GetUserByUsername(recipientUsername)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return sender.Balance, err
+        }</span>
+
+        <span class="cov8" title="1">if sender.Balance &lt;= 0 </span><span class="cov0" title="0">{
+                return sender.Balance, ErrCoinNotEnough
+        }</span>
+
+        <span class="cov8" title="1">if sender.Balance &lt; amount </span><span class="cov0" title="0">{
+                return sender.Balance, ErrCoinNotEnough
+        }</span>
+        <span class="cov8" title="1">err = s.repo.SendCoinTransaction(sender.Username, recipient.Username, amount)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return sender.Balance, err
+        }</span>
+        <span class="cov8" title="1">return sender.Balance - amount, nil</span>
+}
+
+func (s *CoinService) GetOperations(username string) ([]domain.Operations, error) <span class="cov8" title="1">{
+        const op = "service.coin.GetOperations"
+        user, err := s.GetUserByUsername(username)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">operations, err := s.repo.GetOperations(user.Username)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return operations, nil</span>
 }
 </pre>
 		

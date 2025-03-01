@@ -58,7 +58,7 @@ document.getElementById("sendCoins").addEventListener("click", () => {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`  // Отправляем токен в заголовке Authorization
         },
-        body: JSON.stringify({ toUser: recipient, amount: parseInt(amount) })
+        body: JSON.stringify({ to_user: recipient, amount: parseInt(amount) })
     })
     .then(res => res.json())
     .then(data => {
@@ -66,7 +66,7 @@ document.getElementById("sendCoins").addEventListener("click", () => {
             alert("Ошибка: " + data.error);
         } else {
             document.getElementById("response").innerHTML = 
-            `Вы отправили ${data.recipient} ${data.amount} сoin. Ваш текущий баланс ${data.sender_new_balance} сoin`;
+            `Вы отправили ${data.to_user} ${data.amount} сoin. Ваш текущий баланс ${data.sender_new_balance} сoin`;
             loadTransactions();
         }
     })
@@ -94,7 +94,7 @@ document.getElementById("getInfo").addEventListener("click", () => {
             document.getElementById("response").innerHTML = `
             <p><b>Имя:</b> ${data.username}</p>
             <p><b>Баланс:</b> ${data.balance} монет</p>
-            <p><b>Инвентарь:</b> ${data.inventory.map(item => `${item.ItemType} (${item.Quantity})`).join(", ")}</p>
+            <p><b>Инвентарь:</b> ${data.inventory.map(item => `${item.item_type} (${item.quantity})`).join(", ")}</p>
         `;
         }
     })
@@ -164,11 +164,11 @@ function loadTransactions() {
 
         data.forEach(tx => {
             const li = document.createElement("li");
-            li.textContent = `${tx.send} -> ${tx.rec}: ${tx.amount} coin`;
+            li.textContent = `${tx.from_user} -> ${tx.to_user}: ${tx.amount} coin`;
 
-            if (tx.rec === currentUser) {
+            if (tx.to_user === currentUser) {
                 li.style.color = "green"; // Входящий перевод (получили монеты)
-            } else if (tx.send === currentUser) {
+            } else if (tx.from_user === currentUser) {
                 li.style.color = "red"; // Исходящий перевод (отправили монеты)
             }
 

@@ -1,0 +1,7 @@
+bd:
+  host: db
+  user: postgres
+  password: "12345"
+  port: "5432"
+http:
+  address: ":8080"

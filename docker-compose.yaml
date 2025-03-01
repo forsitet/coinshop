@@ -1,24 +1,38 @@
 services:
+
+
   db:
     image: postgres:15
     restart: always
     env_file:
       - .env
-
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 4
 
   app:
     build: .
     ports:
       - "8080:8080"
     depends_on:
-      - db
-    environment:
-      DATABASE_URL: "host=db user=postgres password=12345 dbname=coinshop port=5432 sslmode=disable"
+      db:
+        condition: service_healthy
+  pgadmin4:
+    image: elestio/pgadmin:latest
+    container_name: pgadmin
     restart: always
+    ports:
+      - "5050:80"
+    volumes:
+      - ./config/pgadmin/servers.json:/pgadmin4/servers.json
+    env_file:
+      - .env
 
 volumes:
   pgdata:

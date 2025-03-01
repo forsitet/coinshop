@@ -3,15 +3,19 @@ import { check, sleep } from 'k6';
 import { Trend, Rate } from 'k6/metrics';
 
 export let options = {
-    vus: 250,
-    duration: '1m',
+    stages: [
+        { duration: '10s', target: 1000 },
+        { duration: '50s', target: 1000 }, 
+        { duration: '10s', target: 0 },   
+    ],
     thresholds: {
-        http_req_duration: ['p(99)<50'],
-        checks: ['rate>0.9999']
+        http_req_duration: ['p(99)<50'],  
+        checks: ['rate>0.9999']        
     },
+    rps: 1000,
 };
 
-const BASE_URL = 'http://localhost:8085/api';
+const BASE_URL = 'http://localhost:8080/api';
 
 let responseTime = new Trend('response_time');
 let successRate = new Rate('success_rate');
@@ -19,7 +23,7 @@ let successRate = new Rate('success_rate');
 export default function () {
     let username = `test_user${__VU}`;
     let authPayload = JSON.stringify({ username: username });
-    let params = { headers: { 'Content-Type': 'application/json' } };
+    let params = { headers: { "Content-Type": "application/json" } };
 
     let authRes = http.post(`${BASE_URL}/auth`, authPayload, params);
     responseTime.add(authRes.timings.duration);
@@ -43,7 +47,7 @@ export default function () {
     successRate.add(infoSuccess);
     if (!infoSuccess) console.log(`Ошибка info: ${infoRes.status} - ${infoRes.body}`);
 
-    let sendPayload = JSON.stringify({ toUser: 'Denis', amount: 1 });
+    let sendPayload = JSON.stringify({ to_user: 'Denis', amount: 1 });
     let sendRes = http.post(`${BASE_URL}/sendCoin`, sendPayload, authHeaders);
     let sendSuccess = check(sendRes, { 'Монеты отправлены': (res) => res.status === 200 });
     successRate.add(sendSuccess);
