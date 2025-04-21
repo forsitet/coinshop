@@ -5,7 +5,7 @@ import (
 	hndl "coin/internal/api/http"
 	"coin/internal/api/http/middleware"
 	auth "coin/internal/auth/jwt"
-	"coin/internal/database/postgres/mocks"
+	"coin/internal/repository/mocks"
 	"coin/service"
 	"encoding/json"
 	"net/http"

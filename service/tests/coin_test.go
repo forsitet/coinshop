@@ -2,7 +2,7 @@ package cointests
 
 import (
 	"coin/domain"
-	"coin/internal/database/postgres/mocks"
+	"coin/internal/repository/mocks"
 	"coin/service"
 	"testing"
 
@@ -57,7 +57,8 @@ func TestGetItem(t *testing.T) {
 	repo := mocks.NewInMemoryRepo()
 	s := service.NewCoinService(repo)
 
-	items := s.GetItem()
+	items, err := s.GetItems()
+	assert.NoError(t, err)
 	assert.Len(t, items, 2)
 }
 

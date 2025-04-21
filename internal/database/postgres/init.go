@@ -1,11 +1,8 @@
 package postgres
 
 import (
-	"bufio"
 	"database/sql"
 	"log"
-	"os"
-	"strings"
 
 	_ "github.com/lib/pq" // postgres driver
 )
@@ -80,44 +77,12 @@ func InitCoinTables(db *sql.DB) {
 	}
 
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS items(
-			id SERIAL PRIMARY KEY,
-			name VARCHAR(255) UNIQUE NOT NULL,
-			price INT NOT NULL);
-	`)
-	if err != nil {
-		log.Fatal(op, err)
-	}
-
-	_, err = db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_name_item_unique
 		ON items(name);
 	`)
 	if err != nil {
 		log.Fatal(op, err)
 	}
-	insertItems(db)
+
 	log.Println("all tables are filled in")
-}
-
-func insertItems(db *sql.DB) {
-	const op = "database.postgres.insertItems"
-	file, err := os.Open("items.csv")
-	if err != nil {
-		log.Fatal(op, err)
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		fields := strings.Split(scanner.Text(), ",")
-		_, err = db.Exec(`INSERT INTO items (name, price) 
-				VALUES ($1, $2);`,
-			fields[0], fields[1])
-		if err != nil {
-			log.Println(op, err)
-			continue
-		}
-	}
-	log.Println("the items table is full")
-
 }

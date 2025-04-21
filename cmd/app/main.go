@@ -4,6 +4,8 @@ import (
 	"coin/cmd/app/config"
 	hndl "coin/internal/api/http"
 	"coin/internal/database/postgres"
+	"coin/internal/database/redis"
+	"coin/internal/repository"
 	"coin/service"
 	"database/sql"
 	"fmt"
@@ -37,7 +39,10 @@ func main() {
 
 	postgres.InitCoinTables(coinDB)
 
-	coinRepo := postgres.NewCoinRepository(coinDB)
+	coinPG := postgres.NewPostgresStore(coinDB)
+	log.Println(cfg.Redis.Addres)
+	coinRdC := redis.NewRedisClient(cfg.Redis.Addres)
+	coinRepo := repository.NewCoinRepository(coinPG, coinRdC)
 	coinService := service.NewCoinService(coinRepo)
 	coinHandler := hndl.NewCoinHandler(*coinService)
 

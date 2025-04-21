@@ -3,7 +3,7 @@
 <html>
 	<head>
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-		<title>app: Go Coverage Report</title>
+		<title>config: Go Coverage Report</title>
 		<style>
 			body {
 				background: black;
@@ -55,21 +55,27 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">coin/cmd/app/main.go (0.0%)</option>
+				<option value="file0">coin/cmd/app/config/config.go (0.0%)</option>
 				
-				<option value="file1">coin/internal/api/http/coin.go (34.2%)</option>
+				<option value="file1">coin/cmd/app/main.go (0.0%)</option>
 				
-				<option value="file2">coin/internal/api/http/middleware/auth.go (53.8%)</option>
+				<option value="file2">coin/internal/api/http/coin.go (33.1%)</option>
 				
-				<option value="file3">coin/internal/auth/jwt/jwt.go (84.6%)</option>
+				<option value="file3">coin/internal/api/http/middleware/auth.go (53.8%)</option>
 				
-				<option value="file4">coin/internal/database/postgres/coin.go (0.0%)</option>
+				<option value="file4">coin/internal/auth/jwt/jwt.go (84.6%)</option>
 				
-				<option value="file5">coin/internal/database/postgres/init.go (0.0%)</option>
+				<option value="file5">coin/internal/database/postgres/coin.go (0.0%)</option>
 				
-				<option value="file6">coin/internal/database/postgres/mocks/coin.go (96.3%)</option>
+				<option value="file6">coin/internal/database/postgres/init.go (0.0%)</option>
 				
-				<option value="file7">coin/service/coin.go (64.7%)</option>
+				<option value="file7">coin/internal/database/redis/item.go (0.0%)</option>
+				
+				<option value="file8">coin/internal/repository/coin_repository.go (0.0%)</option>
+				
+				<option value="file9">coin/internal/repository/mocks/coin.go (96.3%)</option>
+				
+				<option value="file10">coin/service/coin.go (63.4%)</option>
 				
 				</select>
 			</div>
@@ -83,13 +89,75 @@
 		</div>
 		<div id="content">
 		
-		<pre class="file" id="file0" style="display: none">package main
+		<pre class="file" id="file0" style="display: none">package config
 
 import (
+        "flag"
+        "log"
+        "os"
+
+        "github.com/ilyakaznacheev/cleanenv"
+)
+
+type AppFlags struct {
+        ConfigPath string
+}
+
+type RedisConfig struct {
+        Addres string `yaml:"address"`
+}
+
+type BDConfig struct {
+        Host     string `yaml:"host"`
+        User     string `yaml:"user"`
+        Password string `yaml:"password"`
+        Port     string `yaml:"port"`
+}
+
+type HTTPConfig struct {
+        Address string `yaml:"address"`
+}
+
+type AppConfig struct {
+        BD    BDConfig    `yaml:"bd"`
+        HTTP  HTTPConfig  `yaml:"http"`
+        Redis RedisConfig `yaml:"redis"`
+}
+
+func ParseFlags() AppFlags <span class="cov0" title="0">{
+        configPath := flag.String("config", "", "Path to config")
+        flag.Parse()
+        return AppFlags{
+                ConfigPath: *configPath,
+        }
+}</span>
+
+func MustLoad(cfgPath string, cfg any) <span class="cov0" title="0">{
+        if cfgPath == "" </span><span class="cov0" title="0">{
+                log.Fatal("Config path is not set")
+        }</span>
+
+        <span class="cov0" title="0">if _, err := os.Stat(cfgPath); os.IsNotExist(err) </span><span class="cov0" title="0">{
+                log.Fatalf("config file does not exist by this path %s", cfgPath)
+        }</span>
+
+        <span class="cov0" title="0">if err := cleanenv.ReadConfig(cfgPath, cfg); err != nil </span><span class="cov0" title="0">{
+                log.Fatalf("error reading config: %s", err)
+        }</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package main
+
+import (
+        "coin/cmd/app/config"
         hndl "coin/internal/api/http"
         "coin/internal/database/postgres"
+        "coin/internal/database/redis"
+        "coin/internal/repository"
         "coin/service"
         "database/sql"
+        "fmt"
         "log"
 
         _ "github.com/lib/pq"
@@ -100,14 +168,19 @@ import (
 const dbName = "coin"
 
 func main() <span class="cov0" title="0">{
-        defaultDBConnStr := "host=localhost port=5432 user=postgres password=12345 dbname=postgres sslmode=disable"
+        appFlags := config.ParseFlags()
+        var cfg config.AppConfig
+        config.MustLoad(appFlags.ConfigPath, &amp;cfg)
+        defaultDBConnStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=postgres sslmode=disable",
+                cfg.BD.Host, cfg.BD.Port, cfg.BD.User, cfg.BD.Password)
         postgresDB, err := sql.Open("postgres", defaultDBConnStr)
         if err != nil </span><span class="cov0" title="0">{
                 log.Fatalf("connection error to %s: %s", dbName, err)
         }</span>
 
         <span class="cov0" title="0">postgres.CreateCoinRepository("coin", postgresDB)
-        coinDBConnStr := "host=localhost user=postgres password=12345 dbname=coin port=5432 sslmode=disable"
+        coinDBConnStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+                cfg.BD.Host, cfg.BD.Port, cfg.BD.User, cfg.BD.Password, dbName)
         coinDB, err := sql.Open("postgres", coinDBConnStr)
         if err != nil </span><span class="cov0" title="0">{
                 log.Fatalf("connection error to %s: %s", "coin", err)
@@ -115,20 +188,24 @@ func main() <span class="cov0" title="0">{
 
         <span class="cov0" title="0">postgres.InitCoinTables(coinDB)
 
-        coinRepo := postgres.NewCoinRepository(coinDB)
+        coinPG := postgres.NewPostgresStore(coinDB)
+        log.Println(cfg.Redis.Addres)
+        coinRdC := redis.NewRedisClient(cfg.Redis.Addres)
+        coinRepo := repository.NewCoinRepository(coinPG, coinRdC)
         coinService := service.NewCoinService(coinRepo)
         coinHandler := hndl.NewCoinHandler(*coinService)
 
         r := gin.Default()
         coinHandler.WithObjectHandlers(r)
 
-        if err := r.Run(":8085"); err != nil </span><span class="cov0" title="0">{
-                log.Fatalf("Ошибка запуска сервера: %v", err)
+        log.Printf("Starting server on %s", cfg.HTTP.Address)
+        if err := r.Run(cfg.HTTP.Address); err != nil </span><span class="cov0" title="0">{
+                log.Fatalf("Error run server: %v", err)
         }</span>
 }
 </pre>
 		
-		<pre class="file" id="file1" style="display: none">package http
+		<pre class="file" id="file2" style="display: none">package http
 
 import (
         "coin/domain"
@@ -217,9 +294,14 @@ func (h *CoinHandler) BuyItem(c *gin.Context) <span class="cov8" title="1">{
 }
 
 func (h *CoinHandler) GetItems(c *gin.Context) <span class="cov0" title="0">{
-        items := h.service.GetItem()
-        c.JSON(http.StatusOK, items)
-}</span>
+        op := "http.coin.GetItems"
+        items, err := h.service.GetItems()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error"})
+        }</span>
+        <span class="cov0" title="0">c.JSON(http.StatusOK, items)</span>
+}
 
 func (h *CoinHandler) Info(c *gin.Context) <span class="cov8" title="1">{
         op := "http.coin.Info"
@@ -264,7 +346,7 @@ func (h *CoinHandler) SendCoin(c *gin.Context) <span class="cov8" title="1">{
 
         <span class="cov8" title="1">senderUsername, ok := c.Get("username")
         if !ok </span><span class="cov0" title="0">{
-                c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизайии"})
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "Ошибка авторизации"})
                 return
         }</span>
         <span class="cov8" title="1">senderUsernameStr, ok := senderUsername.(string)
@@ -290,7 +372,7 @@ func (h *CoinHandler) SendCoin(c *gin.Context) <span class="cov8" title="1">{
         }
         <span class="cov8" title="1">log.Println(op, "Coin sent successfully")
         c.JSON(http.StatusOK, gin.H{
-                "to_user":             req.ToUser,
+                "to_user":            req.ToUser,
                 "amount":             req.Amount,
                 "sender_new_balance": balanceSender,
         })</span>
@@ -338,7 +420,7 @@ func (h *CoinHandler) WithObjectHandlers(r *gin.Engine) <span class="cov0" title
 }
 </pre>
 		
-		<pre class="file" id="file2" style="display: none">package middleware
+		<pre class="file" id="file3" style="display: none">package middleware
 
 import (
         auth "coin/internal/auth/jwt"
@@ -367,7 +449,7 @@ func AuthMiddleware(c *gin.Context) <span class="cov8" title="1">{
 }
 </pre>
 		
-		<pre class="file" id="file3" style="display: none">package auth
+		<pre class="file" id="file4" style="display: none">package auth
 
 import (
         "errors"
@@ -423,7 +505,7 @@ func ValidateToken(signedToken string) (*JwtClaim, error) <span class="cov8" tit
 }
 </pre>
 		
-		<pre class="file" id="file4" style="display: none">package postgres
+		<pre class="file" id="file5" style="display: none">package postgres
 
 import (
         "coin/domain"
@@ -435,20 +517,18 @@ import (
 type preparedStatements struct {
         getUser       *sql.Stmt
         createUser    *sql.Stmt
-        getItem       *sql.Stmt
-        getItemPrice  *sql.Stmt
         getOperations *sql.Stmt
 }
 
-type CoinRepository struct {
+type PostgresStore struct {
         DB    *sql.DB
         stmts *preparedStatements
 }
 
-func NewCoinRepository(db *sql.DB) *CoinRepository <span class="cov0" title="0">{
+func NewPostgresStore(db *sql.DB) *PostgresStore <span class="cov0" title="0">{
         InitCoinTables(db)
         stmts := newPreparedStatements(db)
-        return &amp;CoinRepository{
+        return &amp;PostgresStore{
                 DB:    db,
                 stmts: stmts,
         }
@@ -476,25 +556,6 @@ func newPreparedStatements(db *sql.DB) *preparedStatements <span class="cov0" ti
                 log.Println(op, err)
         }</span>
 
-        <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
-                log.Println(op, err)
-        }</span>
-
-        <span class="cov0" title="0">stmts.getItem, err = db.Prepare(`
-                SELECT i.name, i.price
-                FROM items i; 
-        `)
-
-        stmts.getItemPrice, err = db.Prepare(`
-                SELECT i.price
-                FROM items i
-                WHERE i.name = $1;
-        `)
-
-        if err != nil </span><span class="cov0" title="0">{
-                log.Println(op, err)
-        }</span>
-
         <span class="cov0" title="0">stmts.getOperations, err = db.Prepare(`
                 SELECT t.from_user, t.to_user, t.amount, t.created_at
                 FROM transactions t
@@ -512,7 +573,7 @@ func newPreparedStatements(db *sql.DB) *preparedStatements <span class="cov0" ti
 
 }
 
-func (r *CoinRepository) GetUser(username string) (domain.User, error) <span class="cov0" title="0">{
+func (r *PostgresStore) GetUser(username string) (domain.User, error) <span class="cov0" title="0">{
         var u domain.User
         var itemType sql.NullString
         var itemQuantity sql.NullInt64
@@ -534,19 +595,14 @@ func (r *CoinRepository) GetUser(username string) (domain.User, error) <span cla
         <span class="cov0" title="0">return u, nil</span>
 }
 
-func (r *CoinRepository) CreateUser(username string, balance int) error <span class="cov0" title="0">{
+func (r *PostgresStore) CreateUser(username string, balance int) error <span class="cov0" title="0">{
         _, err := r.stmts.createUser.Exec(username, balance)
         return err
 }</span>
 
-func (r *CoinRepository) PostBuyItem(userID uint, itemName string) error <span class="cov0" title="0">{
+func (r *PostgresStore) PostBuyItem(userID uint, itemName string, price int) error <span class="cov0" title="0">{
         const op = "database.postgres.PostBuyItem"
-        price, err := r.GetItemPrice(itemName)
-        if err != nil </span><span class="cov0" title="0">{
-                log.Println(op, err)
-                return err
-        }</span>
-        <span class="cov0" title="0">tx, err := r.DB.Begin()
+        tx, err := r.DB.Begin()
         if err != nil </span><span class="cov0" title="0">{
                 log.Println(op, err)
                 return err
@@ -556,10 +612,13 @@ func (r *CoinRepository) PostBuyItem(userID uint, itemName string) error <span c
         UPDATE users SET balance = balance - $1 WHERE id = $2;`,
                 price, userID)
         if err != nil </span><span class="cov0" title="0">{
-                tx.Rollback()
-                log.Println(op, err)
-                return err
-        }</span>
+                err2 := tx.Rollback()
+                if err2 != nil </span><span class="cov0" title="0">{
+                        log.Println(op, err2)
+                }</span>
+                <span class="cov0" title="0">log.Println(op, err)
+                return err</span>
+        }
         <span class="cov0" title="0">stmt := `INSERT INTO inventory_items (user_id, item_type, quantity)
                 VALUES ($1, $2, 1)
                 ON CONFLICT (user_id, item_type)
@@ -567,10 +626,13 @@ func (r *CoinRepository) PostBuyItem(userID uint, itemName string) error <span c
 
         _, err = tx.Exec(stmt, userID, itemName)
         if err != nil </span><span class="cov0" title="0">{
-                tx.Rollback()
-                log.Println(op, err)
-                return err
-        }</span>
+                err2 := tx.Rollback()
+                if err2 != nil </span><span class="cov0" title="0">{
+                        log.Println(op, err2)
+                }</span>
+                <span class="cov0" title="0">log.Println(op, err)
+                return err</span>
+        }
         <span class="cov0" title="0">err = tx.Commit()
         if err != nil </span><span class="cov0" title="0">{
                 log.Println(op, err)
@@ -579,37 +641,7 @@ func (r *CoinRepository) PostBuyItem(userID uint, itemName string) error <span c
         <span class="cov0" title="0">return nil</span>
 }
 
-// Под вопросом
-func (r *CoinRepository) GetItem() []domain.Item <span class="cov0" title="0">{
-        rows, err := r.stmts.getItem.Query()
-        if err != nil </span><span class="cov0" title="0">{
-                log.Println(err)
-        }</span>
-        <span class="cov0" title="0">items := make([]domain.Item, 0)
-        for rows.Next() </span><span class="cov0" title="0">{
-                var price int
-                var name string
-                if err := rows.Scan(&amp;name, &amp;price); err != nil </span><span class="cov0" title="0">{
-                        log.Println(err)
-                        continue</span>
-                }
-                <span class="cov0" title="0">items = append(items, domain.Item{Name: name, Price: price})</span>
-        }
-        <span class="cov0" title="0">return items</span>
-}
-
-func (r *CoinRepository) GetItemPrice(itemName string) (int, error) <span class="cov0" title="0">{
-        const op = "database.postgres.getItemPrice"
-        var price int
-        err := r.stmts.getItemPrice.QueryRow(itemName).Scan(&amp;price)
-        if err != nil </span><span class="cov0" title="0">{
-                log.Println(op, err)
-                return 0, err
-        }</span>
-        <span class="cov0" title="0">return price, nil</span>
-}
-
-func (r *CoinRepository) GetOperations(username string) ([]domain.Operations, error) <span class="cov0" title="0">{
+func (r *PostgresStore) GetOperations(username string) ([]domain.Operations, error) <span class="cov0" title="0">{
         const op = "database.postgres.GetOperations"
         rows, err := r.stmts.getOperations.Query(username)
         operations := make([]domain.Operations, 0)
@@ -630,7 +662,7 @@ func (r *CoinRepository) GetOperations(username string) ([]domain.Operations, er
         <span class="cov0" title="0">return operations, nil</span>
 }
 
-func (r *CoinRepository) SendCoinTransaction(senderUsername, recipientUsername string, amount int) error <span class="cov0" title="0">{
+func (r *PostgresStore) SendCoinTransaction(senderUsername, recipientUsername string, amount int) error <span class="cov0" title="0">{
         const op = "database.postgres.SendCoinTransaction"
         tx, err := r.DB.Begin()
         if err != nil </span><span class="cov0" title="0">{
@@ -642,27 +674,36 @@ func (r *CoinRepository) SendCoinTransaction(senderUsername, recipientUsername s
                 UPDATE users SET balance = balance - $1 WHERE username = $2;`,
                 amount, senderUsername)
         if err != nil </span><span class="cov0" title="0">{
-                tx.Rollback()
-                log.Println(op, err)
-                return err
-        }</span>
+                err2 := tx.Rollback()
+                if err2 != nil </span><span class="cov0" title="0">{
+                        log.Println(op, err2)
+                }</span>
+                <span class="cov0" title="0">log.Println(op, err)
+                return err</span>
+        }
 
         <span class="cov0" title="0">_, err = tx.Exec(`
                 UPDATE users SET balance = balance + $1 WHERE username = $2;
         `, amount, recipientUsername)
         if err != nil </span><span class="cov0" title="0">{
-                tx.Rollback()
-                log.Println(op, err)
-                return err
-        }</span>
+                err2 := tx.Rollback()
+                if err2 != nil </span><span class="cov0" title="0">{
+                        log.Println(op, err2)
+                }</span>
+                <span class="cov0" title="0">log.Println(op, err)
+                return err</span>
+        }
         <span class="cov0" title="0">log.Printf("from_user = %s", senderUsername)
         _, err = tx.Exec(`INSERT INTO transactions (from_user, to_user, amount, created_at) VALUES ($1, $2, $3, $4)`,
                 senderUsername, recipientUsername, amount, time.Now())
         if err != nil </span><span class="cov0" title="0">{
-                tx.Rollback()
-                log.Println(op, err)
-                return err
-        }</span>
+                err2 := tx.Rollback()
+                if err2 != nil </span><span class="cov0" title="0">{
+                        log.Println(op, err2)
+                }</span>
+                <span class="cov0" title="0">log.Println(op, err)
+                return err</span>
+        }
 
         <span class="cov0" title="0">err = tx.Commit()
         if err != nil </span><span class="cov0" title="0">{
@@ -673,16 +714,13 @@ func (r *CoinRepository) SendCoinTransaction(senderUsername, recipientUsername s
 }
 </pre>
 		
-		<pre class="file" id="file5" style="display: none">package postgres
+		<pre class="file" id="file6" style="display: none">package postgres
 
 import (
-        "bufio"
         "database/sql"
         "log"
-        "os"
-        "strings"
 
-        _ "github.com/lib/pq"
+        _ "github.com/lib/pq" // postgres driver
 )
 
 func CreateCoinRepository(dbName string, db *sql.DB) <span class="cov0" title="0">{
@@ -698,9 +736,8 @@ func CreateCoinRepository(dbName string, db *sql.DB) <span class="cov0" title="0
                 _, err := db.Exec("CREATE DATABASE " + dbName)
                 if err != nil </span><span class="cov0" title="0">{
                         log.Fatal("error when creating the database\n", err)
-                }</span> else<span class="cov0" title="0"> {
-                        log.Printf("database %q was created successfully\n", dbName)
                 }</span>
+                <span class="cov0" title="0">log.Printf("database %q was created successfully\n", dbName)</span>
         }
 }
 
@@ -756,28 +793,55 @@ func InitCoinTables(db *sql.DB) <span class="cov0" title="0">{
         }</span>
 
         <span class="cov0" title="0">_, err = db.Exec(`
-                CREATE TABLE IF NOT EXISTS items(
-                        id SERIAL PRIMARY KEY,
-                        name VARCHAR(255) UNIQUE NOT NULL,
-                        price INT NOT NULL);
-        `)
-        if err != nil </span><span class="cov0" title="0">{
-                log.Fatal(op, err)
-        }</span>
-
-        <span class="cov0" title="0">_, err = db.Exec(`
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_name_item_unique
                 ON items(name);
         `)
         if err != nil </span><span class="cov0" title="0">{
                 log.Fatal(op, err)
         }</span>
-        <span class="cov0" title="0">insertItems(db)
-        log.Println("all tables are filled in")</span>
+
+        <span class="cov0" title="0">log.Println("all tables are filled in")</span>
+}
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">package redis
+
+import (
+        "bufio"
+        "coin/domain"
+        "context"
+        "log"
+        "os"
+        "strconv"
+        "strings"
+
+        "github.com/redis/go-redis/v9"
+)
+
+var ctx = context.Background()
+
+type RedisClient struct {
+        Client *redis.Client
 }
 
-func insertItems(db *sql.DB) <span class="cov0" title="0">{
-        const op = "database.postgres.insertItems"
+func NewRedisClient(addr string) *RedisClient <span class="cov0" title="0">{
+        rdb := redis.NewClient(&amp;redis.Options{
+                Addr: addr,
+        })
+        _, err := rdb.Ping(ctx).Result()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatalf("failed to connect to Redis: %v", err)
+        }</span>
+        <span class="cov0" title="0">redis := &amp;RedisClient{Client: rdb}
+        if err = redis.insertItems(); err != nil </span><span class="cov0" title="0">{
+                log.Fatal("failed to fill redis")
+        }</span>
+        <span class="cov0" title="0">return redis</span>
+}
+
+func (r *RedisClient) insertItems() error <span class="cov0" title="0">{
+        const op = "database.redis.insertItems"
+        log.Println(op, "attempting to read items.csv")
         file, err := os.Open("items.csv")
         if err != nil </span><span class="cov0" title="0">{
                 log.Fatal(op, err)
@@ -786,16 +850,132 @@ func insertItems(db *sql.DB) <span class="cov0" title="0">{
         scanner := bufio.NewScanner(file)
         for scanner.Scan() </span><span class="cov0" title="0">{
                 fields := strings.Split(scanner.Text(), ",")
-                db.Exec(`INSERT INTO items (name, price) 
-                                VALUES ($1, $2);`,
-                        fields[0], fields[1])
-        }</span>
-        <span class="cov0" title="0">log.Println("the items table is full")</span>
+                log.Println(op, "parsed line:", fields)
 
+                err := r.Client.HSet(ctx, "item:"+fields[0], map[string]interface{}{
+                        "price": fields[1],
+                }).Err()
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Println(op, err)
+                        continue</span>
+                }
+                <span class="cov0" title="0">log.Println(op, "successfully set item:", fields[0])</span>
+        }
+        <span class="cov0" title="0">return nil</span>
+}
+
+func (r *RedisClient) GetItemPrice(itemName string) (int, error) <span class="cov0" title="0">{
+        priceStr, err := r.Client.HGet(ctx, "item:"+itemName, "price").Result()
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, err
+        }</span>
+        <span class="cov0" title="0">price, err := strconv.Atoi(priceStr)
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, err
+        }</span>
+        <span class="cov0" title="0">return price, nil</span>
+}
+
+func (r *RedisClient) GetItems() ([]domain.Item, error) <span class="cov0" title="0">{
+        var cursor uint64
+        var items []domain.Item
+
+        for </span><span class="cov0" title="0">{
+                keys, newCursor, err := r.Client.Scan(ctx, cursor, "item:*", 10).Result()
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+                <span class="cov0" title="0">cursor = newCursor
+
+                for _, key := range keys </span><span class="cov0" title="0">{
+                        data, err := r.Client.HGetAll(ctx, key).Result()
+                        if err != nil </span><span class="cov0" title="0">{
+                                log.Println("HGetAll error:", err)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">price, err := strconv.Atoi(data["price"])
+                        if err != nil </span><span class="cov0" title="0">{
+                                log.Println("Invalid price for key", key)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">parts := strings.SplitN(key, "item:", 2)
+                        if len(parts) != 2 </span><span class="cov0" title="0">{
+                                log.Println("Invalid key format:", key)
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">item := domain.Item{
+                                Name:  parts[1],
+                                Price: price,
+                        }
+                        items = append(items, item)</span>
+                }
+
+                <span class="cov0" title="0">if cursor == 0 </span><span class="cov0" title="0">{
+                        break</span>
+                }
+        }
+
+        <span class="cov0" title="0">return items, nil</span>
 }
 </pre>
 		
-		<pre class="file" id="file6" style="display: none">package mocks
+		<pre class="file" id="file8" style="display: none">package repository
+
+import (
+        "coin/domain"
+        "coin/internal/database/postgres"
+        "coin/internal/database/redis"
+)
+
+type CoinRepository struct {
+        Postgres *postgres.PostgresStore
+        Redis    *redis.RedisClient
+}
+
+func NewCoinRepository(pg *postgres.PostgresStore, rds *redis.RedisClient) *CoinRepository <span class="cov0" title="0">{
+        return &amp;CoinRepository{
+                Postgres: pg,
+                Redis:    rds,
+        }
+}</span>
+
+func (r *CoinRepository) CreateUser(username string, balance int) error <span class="cov0" title="0">{
+        return r.Postgres.CreateUser(username, balance)
+}</span>
+
+func (r *CoinRepository) GetUser(username string) (domain.User, error) <span class="cov0" title="0">{
+        return r.Postgres.GetUser(username)
+}</span>
+
+func (r *CoinRepository) SendCoinTransaction(senderUsername, recipientUsername string, amount int) error <span class="cov0" title="0">{
+        return r.Postgres.SendCoinTransaction(senderUsername, recipientUsername, amount)
+}</span>
+
+func (r *CoinRepository) PostBuyItem(userID uint, itemName string) error <span class="cov0" title="0">{
+        price, err := r.Redis.GetItemPrice(itemName)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">return r.Postgres.PostBuyItem(userID, itemName, price)</span>
+}
+
+func (r *CoinRepository) GetOperations(username string) ([]domain.Operations, error) <span class="cov0" title="0">{
+        return r.Postgres.GetOperations(username)
+}</span>
+
+func (r *CoinRepository) GetItems() ([]domain.Item, error) <span class="cov0" title="0">{
+        return r.Redis.GetItems()
+}</span>
+
+func (r *CoinRepository) GetItemPrice(itemName string) (int, error) <span class="cov0" title="0">{
+        return r.Redis.GetItemPrice(itemName)
+}</span>
+</pre>
+		
+		<pre class="file" id="file9" style="display: none">package mocks
 
 import (
         "coin/domain"
@@ -855,8 +1035,8 @@ func (m *InMemoryRepo) PostBuyItem(userID uint, itemName string) error <span cla
         <span class="cov0" title="0">return errors.New("user not found")</span>
 }
 
-func (m *InMemoryRepo) GetItem() []domain.Item <span class="cov8" title="1">{
-        return m.Items
+func (m *InMemoryRepo) GetItems() ([]domain.Item, error) <span class="cov8" title="1">{
+        return m.Items, nil
 }</span>
 
 func (m *InMemoryRepo) GetItemPrice(itemName string) (int, error) <span class="cov8" title="1">{
@@ -893,19 +1073,19 @@ func (m *InMemoryRepo) SendCoinTransaction(senderUsername, recipientUsername str
 }</span>
 </pre>
 		
-		<pre class="file" id="file7" style="display: none">package service
+		<pre class="file" id="file10" style="display: none">package service
 
 import (
         "coin/domain"
-        "coin/internal/database"
+        "coin/internal/repository"
         "log"
 )
 
 type CoinService struct {
-        repo database.Object
+        repo repository.Object
 }
 
-func NewCoinService(repo database.Object) *CoinService <span class="cov8" title="1">{
+func NewCoinService(repo repository.Object) *CoinService <span class="cov8" title="1">{
         return &amp;CoinService{
                 repo: repo,
         }
@@ -920,7 +1100,7 @@ func (s *CoinService) GetUserByUsername(username string) (domain.User, error) <s
                 return domain.User{}, err
         }</span>
         <span class="cov8" title="1">if user.ID == 0 &amp;&amp; user.Username == "" &amp;&amp; user.Balance == 0 &amp;&amp; len(user.Inventory) == 0 </span><span class="cov8" title="1">{
-                err = s.createUser(username)
+                err = s.СreateUser(username)
                 if err != nil </span><span class="cov0" title="0">{
                         log.Println(op, err)
                         return domain.User{}, err
@@ -934,15 +1114,19 @@ func (s *CoinService) GetUserByUsername(username string) (domain.User, error) <s
         <span class="cov8" title="1">return user, nil</span>
 }
 
-func (s *CoinService) createUser(username string) error <span class="cov8" title="1">{
+func (s *CoinService) СreateUser(username string) error <span class="cov8" title="1">{
         const op = "service.coin.createUser"
         err := s.repo.CreateUser(username, DefaultBalance)
         if err != nil </span><span class="cov0" title="0">{
                 log.Println(op, err)
                 return err
         }</span>
-        <span class="cov8" title="1">s.GetUserByUsername(username)
-        return nil</span>
+        <span class="cov8" title="1">_, err = s.GetUserByUsername(username)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Println(op, err)
+                return err
+        }</span>
+        <span class="cov8" title="1">return nil</span>
 }
 
 func (s *CoinService) BuyItem(username string, itemName string) (domain.User, error) <span class="cov8" title="1">{
@@ -970,8 +1154,8 @@ func (s *CoinService) BuyItem(username string, itemName string) (domain.User, er
         <span class="cov8" title="1">return user, nil</span>
 }
 
-func (s *CoinService) GetItem() []domain.Item <span class="cov8" title="1">{
-        return s.repo.GetItem()
+func (s *CoinService) GetItems() ([]domain.Item, error) <span class="cov8" title="1">{
+        return s.repo.GetItems()
 }</span>
 
 func (s *CoinService) SendCoin(senderUsername string, recipientUsername string, amount int) (int, error) <span class="cov8" title="1">{

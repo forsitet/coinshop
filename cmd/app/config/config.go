@@ -12,6 +12,10 @@ type AppFlags struct {
 	ConfigPath string
 }
 
+type RedisConfig struct {
+	Addres string `yaml:"address"`
+}
+
 type BDConfig struct {
 	Host     string `yaml:"host"`
 	User     string `yaml:"user"`
@@ -23,10 +27,10 @@ type HTTPConfig struct {
 	Address string `yaml:"address"`
 }
 
-
 type AppConfig struct {
 	BD    BDConfig    `yaml:"bd"`
 	HTTP  HTTPConfig  `yaml:"http"`
+	Redis RedisConfig `yaml:"redis"`
 }
 
 func ParseFlags() AppFlags {

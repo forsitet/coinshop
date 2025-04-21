@@ -10,20 +10,18 @@ import (
 type preparedStatements struct {
 	getUser       *sql.Stmt
 	createUser    *sql.Stmt
-	getItem       *sql.Stmt
-	getItemPrice  *sql.Stmt
 	getOperations *sql.Stmt
 }
 
-type CoinRepository struct {
+type PostgresStore struct {
 	DB    *sql.DB
 	stmts *preparedStatements
 }
 
-func NewCoinRepository(db *sql.DB) *CoinRepository {
+func NewPostgresStore(db *sql.DB) *PostgresStore {
 	InitCoinTables(db)
 	stmts := newPreparedStatements(db)
-	return &CoinRepository{
+	return &PostgresStore{
 		DB:    db,
 		stmts: stmts,
 	}
@@ -51,24 +49,6 @@ func newPreparedStatements(db *sql.DB) *preparedStatements {
 		log.Println(op, err)
 	}
 
-	stmts.getItem, err = db.Prepare(`
-		SELECT i.name, i.price
-		FROM items i; 
-	`)
-	if err != nil {
-		log.Println(op, err)
-	}
-
-	stmts.getItemPrice, err = db.Prepare(`
-		SELECT i.price
-		FROM items i
-		WHERE i.name = $1;
-	`)
-
-	if err != nil {
-		log.Println(op, err)
-	}
-
 	stmts.getOperations, err = db.Prepare(`
 		SELECT t.from_user, t.to_user, t.amount, t.created_at
 		FROM transactions t
@@ -86,7 +66,7 @@ func newPreparedStatements(db *sql.DB) *preparedStatements {
 
 }
 
-func (r *CoinRepository) GetUser(username string) (domain.User, error) {
+func (r *PostgresStore) GetUser(username string) (domain.User, error) {
 	var u domain.User
 	var itemType sql.NullString
 	var itemQuantity sql.NullInt64
@@ -108,18 +88,13 @@ func (r *CoinRepository) GetUser(username string) (domain.User, error) {
 	return u, nil
 }
 
-func (r *CoinRepository) CreateUser(username string, balance int) error {
+func (r *PostgresStore) CreateUser(username string, balance int) error {
 	_, err := r.stmts.createUser.Exec(username, balance)
 	return err
 }
 
-func (r *CoinRepository) PostBuyItem(userID uint, itemName string) error {
+func (r *PostgresStore) PostBuyItem(userID uint, itemName string, price int) error {
 	const op = "database.postgres.PostBuyItem"
-	price, err := r.GetItemPrice(itemName)
-	if err != nil {
-		log.Println(op, err)
-		return err
-	}
 	tx, err := r.DB.Begin()
 	if err != nil {
 		log.Println(op, err)
@@ -159,37 +134,7 @@ func (r *CoinRepository) PostBuyItem(userID uint, itemName string) error {
 	return nil
 }
 
-// Под вопросом
-func (r *CoinRepository) GetItem() []domain.Item {
-	rows, err := r.stmts.getItem.Query()
-	if err != nil {
-		log.Println(err)
-	}
-	items := make([]domain.Item, 0)
-	for rows.Next() {
-		var price int
-		var name string
-		if err := rows.Scan(&name, &price); err != nil {
-			log.Println(err)
-			continue
-		}
-		items = append(items, domain.Item{Name: name, Price: price})
-	}
-	return items
-}
-
-func (r *CoinRepository) GetItemPrice(itemName string) (int, error) {
-	const op = "database.postgres.getItemPrice"
-	var price int
-	err := r.stmts.getItemPrice.QueryRow(itemName).Scan(&price)
-	if err != nil {
-		log.Println(op, err)
-		return 0, err
-	}
-	return price, nil
-}
-
-func (r *CoinRepository) GetOperations(username string) ([]domain.Operations, error) {
+func (r *PostgresStore) GetOperations(username string) ([]domain.Operations, error) {
 	const op = "database.postgres.GetOperations"
 	rows, err := r.stmts.getOperations.Query(username)
 	operations := make([]domain.Operations, 0)
@@ -210,7 +155,7 @@ func (r *CoinRepository) GetOperations(username string) ([]domain.Operations, er
 	return operations, nil
 }
 
-func (r *CoinRepository) SendCoinTransaction(senderUsername, recipientUsername string, amount int) error {
+func (r *PostgresStore) SendCoinTransaction(senderUsername, recipientUsername string, amount int) error {
 	const op = "database.postgres.SendCoinTransaction"
 	tx, err := r.DB.Begin()
 	if err != nil {

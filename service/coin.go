@@ -2,15 +2,15 @@ package service
 
 import (
 	"coin/domain"
-	"coin/internal/database"
+	"coin/internal/repository"
 	"log"
 )
 
 type CoinService struct {
-	repo database.Object
+	repo repository.Object
 }
 
-func NewCoinService(repo database.Object) *CoinService {
+func NewCoinService(repo repository.Object) *CoinService {
 	return &CoinService{
 		repo: repo,
 	}
@@ -79,8 +79,8 @@ func (s *CoinService) BuyItem(username string, itemName string) (domain.User, er
 	return user, nil
 }
 
-func (s *CoinService) GetItem() []domain.Item {
-	return s.repo.GetItem()
+func (s *CoinService) GetItems() ([]domain.Item, error) {
+	return s.repo.GetItems()
 }
 
 func (s *CoinService) SendCoin(senderUsername string, recipientUsername string, amount int) (int, error) {

@@ -87,7 +87,12 @@ func (h *CoinHandler) BuyItem(c *gin.Context) {
 }
 
 func (h *CoinHandler) GetItems(c *gin.Context) {
-	items := h.service.GetItem()
+	op := "http.coin.GetItems"
+	items, err := h.service.GetItems()
+	if err != nil {
+		log.Println(op, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error"})
+	}
 	c.JSON(http.StatusOK, items)
 }
 
@@ -160,7 +165,7 @@ func (h *CoinHandler) SendCoin(c *gin.Context) {
 	}
 	log.Println(op, "Coin sent successfully")
 	c.JSON(http.StatusOK, gin.H{
-		"to_user":             req.ToUser,
+		"to_user":            req.ToUser,
 		"amount":             req.Amount,
 		"sender_new_balance": balanceSender,
 	})

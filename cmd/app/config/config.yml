@@ -5,3 +5,5 @@ bd:
   port: "5432"
 http:
   address: ":8080"
+redis:
+  address: "redis:6379"

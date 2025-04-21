@@ -1,8 +1,18 @@
 services:
-
-
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
   db:
     image: postgres:15
+    container_name: postgres
     restart: always
     env_file:
       - .env
@@ -18,10 +28,13 @@ services:
 
   app:
     build: .
+    container_name: app
     ports:
       - "8080:8080"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
   pgadmin4:
     image: elestio/pgadmin:latest

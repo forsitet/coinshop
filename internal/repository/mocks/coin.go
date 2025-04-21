@@ -58,8 +58,8 @@ func (m *InMemoryRepo) PostBuyItem(userID uint, itemName string) error {
 	return errors.New("user not found")
 }
 
-func (m *InMemoryRepo) GetItem() []domain.Item {
-	return m.Items
+func (m *InMemoryRepo) GetItems() ([]domain.Item, error) {
+	return m.Items, nil
 }
 
 func (m *InMemoryRepo) GetItemPrice(itemName string) (int, error) {
